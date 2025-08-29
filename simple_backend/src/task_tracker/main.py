@@ -1,60 +1,56 @@
-import json
 from fastapi import FastAPI, HTTPException
+from classes import RemoteTaskStorage
 
 app = FastAPI()
 
-ID = 0
 STATUS_LIST = ["Задача создана", "Задача в процессе выполнения", "Задача выполнена"]
 DEFAULT_STATUS = STATUS_LIST[0]
 
-def get_new_id():
-    global ID
-    ID += 1
-    return ID
+storage = RemoteTaskStorage()
+
+def next_id() -> int:
+    tasks = storage.load()
+    return max((t["task_id"] for t in tasks), default=0) + 1
 
 class Task:
     def __init__(self, name: str):
-        self.task_id = get_new_id()
+        self.task_id = next_id()
         self.name = name
         self.status = DEFAULT_STATUS
     def to_dict(self):
-        return {
-            "task_id": self.task_id,
-            "name": self.name,
-            "status": self.status,
-        }
-
-
-tasks: list[Task] = []
+        return {"task_id": self.task_id, "name": self.name, "status": self.status}
 
 @app.get("/tasks")
 def get_tasks() -> list[dict]:
-    return [t.to_dict() for t in tasks]
+    return storage.load()
 
 @app.post("/tasks")
 def create_task(name: str):
+    tasks = storage.load()
     new_task = Task(name)
-    tasks.append(new_task)
+    tasks.append(new_task.to_dict())
+    storage.save(tasks)
     return new_task.to_dict()
-
 
 @app.put("/tasks/{task_id}")
 def update_task(task_id: int):
+    tasks = storage.load()
     for t in tasks:
-        if t.id == task_id:
-            if t.status == DEFAULT_STATUS:
-                t.status = STATUS_LIST[1]
-            elif t.status == STATUS_LIST[1]:
-                t.status = STATUS_LIST[2]
-            else:
-                t.status = STATUS_LIST[2]
-    else:
-        return HTTPException(status_code=404, detail="ID не найден")
+        if t["task_id"] == task_id:
+            if t["status"] == DEFAULT_STATUS:
+                t["status"] = STATUS_LIST[1]
+            elif t["status"] == STATUS_LIST[1]:
+                t["status"] = STATUS_LIST[2]
+            storage.save(tasks)
+            return t
+    raise HTTPException(404, "ID не найден")
 
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: int):
-    for task in tasks:
-        if task_id == task_id:
-            tasks.remove(task)
-    else:
-        return HTTPException(status_code=404, detail="ID не найден")
+    tasks = storage.load()
+    for i, t in enumerate(tasks):
+        if t["task_id"] == task_id:
+            tasks.pop(i)
+            storage.save(tasks)
+            return {"detail": "Удалено"}
+    raise HTTPException(404, "ID не найден")
