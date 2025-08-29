@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from classes import RemoteTaskStorage
+from classes import RemoteTaskStorage, CloudflareAIClient
 
 app = FastAPI()
 
@@ -7,6 +7,7 @@ STATUS_LIST = ["Задача создана", "Задача в процессе 
 DEFAULT_STATUS = STATUS_LIST[0]
 
 storage = RemoteTaskStorage()
+ai = CloudflareAIClient()
 
 def next_id() -> int:
     tasks = storage.load()
@@ -27,7 +28,12 @@ def get_tasks() -> list[dict]:
 @app.post("/tasks")
 def create_task(name: str):
     tasks = storage.load()
-    new_task = Task(name)
+    try:
+        tip = ai.explain(f"Объясни пошагово, как решать вот эту задачу -> {name} ")
+        full_name = f"{name} \n\nПодсказка LLM:\n{tip}"
+    except Exception:
+        full_name = name
+    new_task = Task(full_name)
     tasks.append(new_task.to_dict())
     storage.save(tasks)
     return new_task.to_dict()
